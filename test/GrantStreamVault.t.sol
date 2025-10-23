@@ -201,10 +201,10 @@ contract GrantStreamVaultTest is Test {
 
     function test_Revert_UpdateGrant_DecreaseDuration() public {
         _createTestGrant();
-        
+
         vm.prank(owner);
         vm.expectRevert(GrantStreamVault.InvalidDuration.selector);
-        vault.updateGrant(recipient, GRANT_AMOUNT, DURATION - 30 days, CLIFF);  // ← Decreasing should fail
+        vault.updateGrant(recipient, GRANT_AMOUNT, DURATION - 30 days, CLIFF); // ← Decreasing should fail
     }
 
     function test_UpdateGrant_IncreaseDuration() public {
