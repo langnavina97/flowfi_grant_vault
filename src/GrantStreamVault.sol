@@ -36,7 +36,7 @@ contract GrantStreamVault {
     // These cannot be changed after deployment, ensuring predictable behavior.
     uint16 public immutable PROTOCOL_FEE_BPS; // Protocol fee in basis points (1/10000). Max 500 (5%).
     address public immutable GRANT_TOKEN;
-    
+
     // Production Note: For production, consider making fee recipient mutable with proper access control
     // to handle compromised addresses or operational changes. This MVP keeps it immutable for simplicity.
     // Add updateFeeRecipient function for production use
@@ -44,11 +44,11 @@ contract GrantStreamVault {
 
     // Emergency pause mechanism - can halt all claims if needed.
     bool public paused;
-    
+
     // Owner address for access control
     // Production: Use OpenZeppelin's Ownable2Step for enhanced security
     address public owner;
-    
+
     // Reentrancy guard
     // Production: Use OpenZeppelin's ReentrancyGuard for well-audited protection
     uint256 private _status;
@@ -56,12 +56,12 @@ contract GrantStreamVault {
     // Grant data structure - tightly packed to minimize storage slots and gas costs.
     // Uses uint128 for amounts (supports up to ~3.4e38 tokens) and uint32 for timestamps.
     struct Grant {
-        uint128 totalAmount;   // Total amount of tokens to vest
+        uint128 totalAmount; // Total amount of tokens to vest
         uint128 claimedAmount; // Amount already claimed by the recipient
-        uint32 startTime;      // Vesting start timestamp
-        uint32 duration;       // Total vesting duration in seconds
-        uint32 cliffDuration;  // Vesting cliff duration in seconds
-        bool isActive;         // True if grant is currently active (not revoked)
+        uint32 startTime; // Vesting start timestamp
+        uint32 duration; // Total vesting duration in seconds
+        uint32 cliffDuration; // Vesting cliff duration in seconds
+        bool isActive; // True if grant is currently active (not revoked)
         // Total: 16 + 16 + 4 + 4 + 4 + 1 = 45 bytes (fits in 2 storage slots)
     }
 
@@ -79,13 +79,13 @@ contract GrantStreamVault {
         if (paused) revert ClaimsPaused();
         _;
     }
-    
+
     // Production: Use OpenZeppelin's Ownable2Step modifier
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
         _;
     }
-    
+
     // Production: Use OpenZeppelin's ReentrancyGuard modifier
     modifier nonReentrant() {
         if (_status == 2) revert ReentrancyGuard();
@@ -104,14 +104,10 @@ contract GrantStreamVault {
      * @param _feeRecipient Address that receives protocol fees
      * @param _owner Owner address with administrative privileges
      */
-    constructor(
-        uint16 _protocolFeeBps,
-        address _grantToken,
-        address _feeRecipient,
-        address _owner
-    ) {
-        if (_grantToken == address(0) || _feeRecipient == address(0) || _owner == address(0)) 
+    constructor(uint16 _protocolFeeBps, address _grantToken, address _feeRecipient, address _owner) {
+        if (_grantToken == address(0) || _feeRecipient == address(0) || _owner == address(0)) {
             revert ZeroAddress();
+        }
         if (_protocolFeeBps > 500) revert InvalidFee();
 
         GRANT_TOKEN = _grantToken;
@@ -124,11 +120,7 @@ contract GrantStreamVault {
     // --- Events ---
 
     event GrantCreated(
-        address indexed recipient,
-        uint256 totalAmount,
-        uint32 startTime,
-        uint32 duration,
-        uint32 cliffDuration
+        address indexed recipient, uint256 totalAmount, uint32 startTime, uint32 duration, uint32 cliffDuration
     );
 
     event GrantUpdated(
@@ -139,20 +131,11 @@ contract GrantStreamVault {
         uint32 newCliffDuration
     );
 
-    event FundsClaimed(
-        address indexed recipient,
-        uint256 claimAmount,
-        uint256 feeAmount,
-        uint256 netAmount
-    );
+    event FundsClaimed(address indexed recipient, uint256 claimAmount, uint256 feeAmount, uint256 netAmount);
 
     event ClaimsPausedToggled(address indexed caller, bool newPausedState);
-    
-    event GrantRevoked(
-        address indexed recipient, 
-        uint256 vestedUnclaimed, 
-        uint256 unvestedReturned
-    );
+
+    event GrantRevoked(address indexed recipient, uint256 vestedUnclaimed, uint256 unvestedReturned);
 
     // --- Core Logic ---
 
@@ -163,18 +146,18 @@ contract GrantStreamVault {
      * @return totalVested The total amount that has vested
      * @return availableToClaim The amount available to claim (0 if nothing available)
      */
-    function _calculateVestedAndAvailable(Grant memory grant, address recipient) internal view returns (uint256 totalVested, uint256 availableToClaim) {
+    function _calculateVestedAndAvailable(Grant memory grant, address recipient)
+        internal
+        view
+        returns (uint256 totalVested, uint256 availableToClaim)
+    {
         if (grant.totalAmount == 0) {
             return (0, 0);
         }
 
-        totalVested = grant.isActive 
-            ? vestedAmount(recipient) 
-            : grant.totalAmount; // Revoked grants: locked at revocation amount
+        totalVested = grant.isActive ? vestedAmount(recipient) : grant.totalAmount; // Revoked grants: locked at revocation amount
 
-        availableToClaim = totalVested > grant.claimedAmount 
-            ? totalVested - grant.claimedAmount 
-            : 0;
+        availableToClaim = totalVested > grant.claimedAmount ? totalVested - grant.claimedAmount : 0;
     }
 
     /**
@@ -196,11 +179,11 @@ contract GrantStreamVault {
      */
     function vestedAmount(address recipient) public view returns (uint256) {
         Grant memory grant = grants[recipient];
-        
+
         // Early returns for edge cases
         if (grant.totalAmount == 0) return 0; // No grant exists
         if (block.timestamp < grant.startTime) return 0; // Vesting hasn't started
-        
+
         uint256 vestingTime = block.timestamp - grant.startTime;
 
         // Cliff period - nothing vests until cliff duration has passed
@@ -256,7 +239,7 @@ contract GrantStreamVault {
         if (totalAmount == 0) revert InvalidAmount();
         if (duration == 0) revert InvalidDuration();
         if (cliffDuration > duration) revert InvalidCliffDuration();
-        
+
         // MVP: Prevent backdated grants for security and clarity
         // Production: If retroactive grants are needed, add explicit parameter and logic
         if (startTime < block.timestamp) revert InvalidStartTime();
@@ -295,16 +278,14 @@ contract GrantStreamVault {
      * @param newDuration New duration (must be >= current to prevent acceleration)
      * @param newCliffDuration New cliff duration (must be <= current for fairness)
      */
-    function updateGrant(
-        address recipient,
-        uint256 newTotalAmount,
-        uint32 newDuration,
-        uint32 newCliffDuration
-    ) external onlyOwner {
+    function updateGrant(address recipient, uint256 newTotalAmount, uint32 newDuration, uint32 newCliffDuration)
+        external
+        onlyOwner
+    {
         // Input validation
         if (recipient == address(0)) revert ZeroAddress();
         if (newCliffDuration > newDuration) revert InvalidCliffDuration();
-        
+
         Grant storage currentGrant = grants[recipient];
 
         // Grant must exist and be active
@@ -316,7 +297,7 @@ contract GrantStreamVault {
         if (!currentGrant.isActive) revert GrantInactive();
 
         // Safety checks for updates to protect recipient
-        
+
         // 1. Can only increase total amount (prevents rugging)
         if (newTotalAmount < currentGrant.totalAmount) {
             revert InvalidAmount();
@@ -353,13 +334,7 @@ contract GrantStreamVault {
             IERC20(GRANT_TOKEN).transferFrom(msg.sender, address(this), additionalAmount);
         }
 
-        emit GrantUpdated(
-            recipient, 
-            newTotalAmount, 
-            additionalAmount, 
-            newDuration, 
-            newCliffDuration
-        );
+        emit GrantUpdated(recipient, newTotalAmount, additionalAmount, newDuration, newCliffDuration);
     }
 
     /**
@@ -386,7 +361,7 @@ contract GrantStreamVault {
             // Production: Use TransferHelper.safeTransfer for better error handling
             IERC20(GRANT_TOKEN).transfer(FEE_RECIPIENT, feeAmount);
         }
-        
+
         if (netAmount > 0) {
             // Production: Use TransferHelper.safeTransfer for better error handling
             IERC20(GRANT_TOKEN).transfer(msg.sender, netAmount);
@@ -411,7 +386,7 @@ contract GrantStreamVault {
      * @dev Recipient keeps any already-vested but unclaimed funds.
      * @dev Grant is marked inactive and totalAmount is locked to vested amount.
      * @param recipient Address of the grant recipient to revoke
-     * 
+     *
      * Future Enhancement - Add reactivateGrant function to restore revoked grants
      * This would allow owners to reactivate grants that were revoked, useful for:
      * - Temporary suspensions that need to be lifted
@@ -420,7 +395,7 @@ contract GrantStreamVault {
      */
     function revokeGrant(address recipient) external onlyOwner {
         Grant storage grant = grants[recipient];
-        
+
         if (grant.totalAmount == 0) {
             // Check if grant ever existed by looking at other fields
             if (grant.startTime > 0 || grant.duration > 0) revert GrantInactive();
@@ -430,19 +405,18 @@ contract GrantStreamVault {
 
         uint256 totalVested = vestedAmount(recipient);
         uint256 unvestedAmount = uint256(grant.totalAmount) - totalVested;
-        
+
         // --- State Update: Lock the claimable funds ---
-        
+
         // 1. Mark as inactive (stops further vesting calculation)
         grant.isActive = false;
 
         uint256 vestedUnclaimed = totalVested - uint256(grant.claimedAmount);
-        
+
         // 2. Lock totalAmount to the vested unclaimed amount at revocation time
         // This ensures recipient can only claim what was vested but not yet claimed
         grant.totalAmount = MathUtils.safe128(vestedUnclaimed);
         grant.claimedAmount = 0; // Reset claimed amount since totalAmount now represents claimable amount
-    
 
         // 3. Return unvested funds to current owner
         if (unvestedAmount > 0) {
@@ -460,7 +434,7 @@ contract GrantStreamVault {
     // --- Upgrade Path Notes ---
     /**
      * Production Upgrade Path: UUPS Proxy Pattern
-     * 
+     *
      * 1. Inherit from UUPSUpgradeable and Initializable (OpenZeppelin)
      * 2. Replace constructor with initialize() function
      * 3. Add storage gap: uint256[50] private __gap;
@@ -469,7 +443,7 @@ contract GrantStreamVault {
      * 5. Use OpenZeppelin's upgradeable contract variants
      * 6. Deploy with ERC1967Proxy pointing to implementation
      * 7. Test storage layout compatibility before each upgrade
-     * 
+     *
      * Security Considerations:
      * - Always use storage gaps to allow future variable additions
      * - Never change order of existing state variables
