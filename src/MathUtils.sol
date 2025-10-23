@@ -5,7 +5,7 @@ library MathUtils {
     error InvalidCastToUint128();
 
     /**
-     * @notice Safely casts a uint value to uint128, ensuring the value is within the range of uint160.
+     * @notice Safely casts a uint value to uint128, ensuring the value is within the range of uint128.
      * @param _val The value to cast to uint128.
      * @return The value cast to uint128, if it is representable.
      * @dev Reverts with `InvalidCastToUint128` error if the value exceeds the maximum uint128 value.
